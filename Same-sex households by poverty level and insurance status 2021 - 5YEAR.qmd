@@ -1,0 +1,78 @@
+---
+title: "Same-sex households in Texas by poverty status, health insurance, and race/ethnicity, 2021 - 5-Year Estimates"
+author: "Kaitlan Wong"
+format: html
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ipumsr)
+library(dplyr)
+library(writexl)
+```
+
+```{r}
+#Read in ACS data from IPUMS
+
+usa_ddi <- read_ipums_ddi("usa_00031.xml")
+data <- read_ipums_micro("usa_00031.xml", data_file = ("usa_00031.csv.gz"), verbose = FALSE)
+
+```
+
+```{r}
+#Filter for same-sex couple households and for one persone from each household
+ss_hh <- data %>%
+  filter(COUPLETYPE %in% c(2, 4)) %>%
+  filter(PERNUM==1) %>%
+  #Mutate vrace/ethnicity and couple type variables
+  mutate(race_eth = case_when(HISPAN %in% c(1:4) & RACE %in% c(1:9) ~ "Hispanic",
+                              HISPAN == 0 & RACE == 1 ~ "White, non-Hispanic",
+                              HISPAN == 0 & RACE == 2 ~ "Black, non-Hispanic",
+                              HISPAN == 0 & RACE == 3 ~ "AIAN, non-Hispanic",
+                              HISPAN == 0 & RACE %in% c(4:6) ~ "Asian or Pacific Islander, non-Hispanic",
+                              HISPAN == 0 & RACE == 7 ~ "Other, non-Hispanic",
+                              HISPAN == 0 & RACE %in% c(8, 9) ~ "Multiracial, non-Hispanic",
+                              TRUE ~ NA_character_),
+         pov = case_when(POVERTY %in% c(001:100) ~ "At or Below 100% Poverty",
+                         POVERTY %in% c(101:501)~ "Above 100% Poverty",
+                         TRUE ~ NA_character_),
+         insurance = case_when(HCOVANY == 1 ~ "No HI",
+                               HCOVANY == 2 ~ "With HI",
+                               TRUE ~ NA_character_)
+         )
+```
+
+```{r}
+## Survey Design
+
+#install.packages("survey")
+library(survey)
+options(survey.lonely.psu = "adjust")
+
+#HOUSEHOLD WEIGHTS DESIGN
+des_hh <- svydesign(id=~CLUSTER, strata=~interaction(STRATA, YEAR), weights=~HHWT, data=ss_hh)  
+
+```
+
+```{r}
+# Calculate table for same-sex couple households by race/ethnicity and poverty status
+ss_table_poverty <- svytable(~race_eth + pov, design = des_hh)
+
+# Convert table to data frame
+ss_table_poverty_df <- as.data.frame(ss_table_poverty)
+
+# Export table for same-sex couple households by race/ethnicity and poverty status
+write_xlsx(ss_table_poverty_df, "same_sex_couples_race_eth_poverty_5year.xlsx")
+
+
+# Calculate table for race/ethnicity by health insurance status
+ss_table_insurance <- svytable(~race_eth + insurance, design = des_hh)
+
+# Convert table to data frame
+ss_table_insurance_df <- as.data.frame(ss_table_insurance)
+
+# Export table for race/ethnicity by health insurance status
+write_xlsx(ss_table_insurance_df, "race_ethnicity_health_insurance_5year.xlsx")
+
+```
